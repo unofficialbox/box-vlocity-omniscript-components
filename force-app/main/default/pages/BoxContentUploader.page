@@ -1,0 +1,78 @@
+<apex:page lightningStylesheets="false"  standardStylesheets="false"  showheader="false" sidebar="false">
+    <apex:slds />
+    <apex:includeScript value="{!URLFOR('https://cdn01.boxcdn.net/platform/elements/25.2.0/en-US/uploader.js')}" />
+    <apex:stylesheet value="{!URLFOR('https://cdn01.boxcdn.net/platform/elements/25.2.0/en-US/uploader.css')}" />    
+    <div class="uploader"></div>
+        
+        <script>
+       
+            let contentUploader = new Box.ContentUploader();
+                
+            const folderId = '{!$CurrentPage.parameters.folderId}';
+            const accessToken = '{!$CurrentPage.parameters.accessToken}';
+            console.log('VF - Found folderId: ', folderId);
+            console.log('VF - Found accessToken: ', accessToken);
+
+            contentUploader.show(folderId, accessToken, {
+                container: '.uploader'
+                // onComplete: uploadComplete
+                // responseInterceptor: handleError
+            });
+            // Log upload data to console
+            contentUploader.on('complete', (data) => { 
+              
+
+                var files = [];
+                for(var i=0;i<data.length;i++){
+                    files.push({
+                                id: data[i].id,
+                                name: data[i].name,
+                                success: true
+                    });
+                }
+                console.log('VF - On Complete: ', JSON.stringify(files, null, 2));
+                window.parent.postMessage({operation : 'upload_complete', files : files}, '*');
+                
+            });
+            
+            contentUploader.on('upload', (data) => {
+
+
+                var item = {
+                    "name" : data.name,
+                    "id" : data.id,
+                    "success" : true
+                };
+                console.log('VF - On Upload: ', JSON.stringify(payload, null, 2));
+                        
+                window.parent.postMessage({operation : 'item_uploaded', item : item}, '*');
+            });
+            
+            contentUploader.on('error', (data) => {
+
+                var files = [];
+                files.push({
+                    name: data.file.name,
+                    error : data.error,
+                    success: false
+                });
+                console.log('VF - On error: ', JSON.stringify(files, null, 2));
+
+                window.parent.postMessage({operation : 'upload_error', files : files}, '*'); 
+            });
+
+        </script>
+    <body>
+        
+           
+        <style>
+            .uploader {
+            /* border: 1px solid #eee; */
+            height: 99.5vh;
+            /* width: 95vw; */
+            }
+        </style>
+        
+        
+    </body>
+</apex:page>

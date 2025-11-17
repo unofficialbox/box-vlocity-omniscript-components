@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>63.0</apiVersion>
+    <isExposed>true</isExposed>
+    <runtimeNamespace>vlocityins2</runtimeNamespace>
+    <masterLabel>Vlocity Box Content Uploader</masterLabel>
+    <targets>
+        <target>lightning__RecordPage</target>
+        <target>lightningCommunity__Page</target>
+        <target>lightningCommunity__Default</target>
+        <target>lightning__FlowScreen</target>
+    </targets>
+    <targetConfigs>
+        <targetConfig targets="lightning__RecordPage">
+            <property
+                name="accessToken"
+                type="String"
+                label="Access Token"
+                description="Box downscoped access token for the target upload folder"
+            />
+            <property
+                name="folderId"
+                type="String"
+                label="Box Folder Id"
+                description="Folder Id associated with the current record"
+            />
+        </targetConfig>
+            <targetConfig targets="lightningCommunity__Default">
+                <property
+                    name="accessToken"
+                    type="String"
+                    label="Access Token"
+                    description="Box downscoped access token for the target upload folder"
+                />
+                <property
+                    name="folderId"
+                    type="String"
+                    label="Box Folder Id"
+                    description="Folder Id associated with the current record"
+                />
+            </targetConfig>
+            <targetConfig targets="lightning__FlowScreen">
+                <property
+                    name="accessToken"
+                    type="String"
+                    label="Access Token"
+                    description="Box downscoped access token for the target upload folder"
+                />
+                <property
+                    name="folderId"
+                    type="String"
+                    label="Box Folder Id"
+                    description="Folder Id associated with the current record"
+                />
+            </targetConfig>
+    </targetConfigs>
+</LightningComponentBundle>
