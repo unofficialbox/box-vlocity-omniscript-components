@@ -1,5 +1,6 @@
 import { LightningElement, api, wire} from "lwc";
 import { OmniscriptBaseMixin } from "vlocity_ins/omniscriptBaseMixin";
+// import pubsub from "vlocity_ins/pubsub";
 import { getRecord } from "lightning/uiRecordApi";
 
 
@@ -12,14 +13,18 @@ export default class VlocityBoxUploader extends OmniscriptBaseMixin(LightningEle
     @api buieURL;
     @api uploadedFiles;
     @api recordId;
+    filesUploaded = false;
 
 
     @api stepName;
     data = {};
     error;
 
-    async connectedCallback() {  
+    connectedCallback() {  
         window.addEventListener('message' , this.handleVFResponse);
+        // pubsub.register('upload_complete', {
+        //     data: this.handleVFResponse.bind(this)
+        // })
         console.log('LWC - flex card data: ', JSON.stringify(this.flexCardData, null, 2));
         console.log('LWC - recordId: ', this.recordId);
      
@@ -44,19 +49,39 @@ export default class VlocityBoxUploader extends OmniscriptBaseMixin(LightningEle
 
         this.buieURL = `${vfOrigin}/apex/BoxContentUploader?accessToken=${accessToken}&folderId=${folderId}`;
         console.log('LWC - buieURL: ', this.buieURL)
-        
+
     }
 
     handleVFResponse(event) {
         console.log('LWC Received From VF - message: ', event);
 
-        const data = event.data;
-        console.log('LWC Received From VF - data: ', data);
-        if(data.operation == 'upload_complete') {
-            this.uploadedFiles = data.files;
+        let eventData = event.data;
+        console.log('LWC Received From VF - data: ', eventData);
+        if(eventData.operation == 'upload_complete') {
+            this.filesUploaded = true;
+            this.uploadedFiles = eventData.files;
+
+            let data = {
+                files: JSON.parse(JSON.stringify(eventData.files))
+            };
             console.log('LWC Received From VF - Found uploaded files: ', this.uploadedFiles);
-            this.omniApplyCallResp(this.uploadedFiles);
+            console.log('Omni Json Data: ', this.omniJsonData);
+
+            // const eventName = 'omniaggregate';
+            // const myEvent = new CustomEvent(eventName, {
+            //     bubbles: true,
+            //     cancelable: true,
+            //     composed: true,
+            //     detail: data,
+            // });
+            // this.dispatchEvent(myEvent); 
+
+            // this.omniUpdateDataJson(this.uploadedFiles)
+            this.omniApplyCallResp(eventData);
+            // this.omniUpdateDataJson(eventData);
+            // this.omniSaveState(eventData, 'files', false);
             // this.omniUpdateDataJson({"uploadFiles": this.uploadedFiles});        
+            // this.renderedCallback()
         }
     }
 }

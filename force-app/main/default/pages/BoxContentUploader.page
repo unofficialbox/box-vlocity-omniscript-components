@@ -31,7 +31,7 @@
                     });
                 }
                 console.log('VF - On Complete: ', JSON.stringify(files, null, 2));
-                window.parent.postMessage({operation : 'upload_complete', files : files}, '*');
+                window.parent.postMessage({operation : 'upload_complete', files : JSON.parse(JSON.stringify(files))}, '*');
                 
             });
             
