@@ -68,7 +68,7 @@
         <style>
             .uploader {
             /* border: 1px solid #eee; */
-            height: 99.5vh;
+            height: 90vh;
             /* width: 95vw; */
             }
         </style>
