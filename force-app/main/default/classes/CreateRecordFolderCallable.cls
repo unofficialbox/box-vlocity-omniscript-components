@@ -49,12 +49,6 @@ global with sharing class CreateRecordFolderCallable implements Callable{
         if (output == null)  output = new Map<String, Object>();
         if (options == null) options = new Map<String, Object>();
 
-        // Ensure the args map holds references to the (possibly) newly-created envelopes
-        // so that the returned output is the same instance the caller provided/expects.
-        args.put(KEY_INPUT, input);
-        args.put(KEY_OUTPUT, output);
-        args.put(KEY_OPTIONS, options);
-
         // Normalize action string
         String normalized;
         try {
@@ -92,11 +86,6 @@ global with sharing class CreateRecordFolderCallable implements Callable{
         Boolean optCreateRootFolder = (Boolean) input.get('optCreateRootFolder');
         if (optCreateRootFolder == null) {
             optCreateRootFolder = false;
-        }
-
-        // Lazy initialize toolkit in case default construction failed in current context
-        if (toolkit == null) {
-            toolkit = new box.Toolkit();
         }
 
         String folderId = toolkit.createFolderForRecordId(recordId, folderNameOverride, optCreateRootFolder);
