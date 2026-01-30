@@ -4,17 +4,21 @@
  */
 @JsonAccess(serializable='always')
 global with sharing class BoxToolkitCallable implements System.Callable {
-
+    private static final String METHOD_POST = 'POST';
+    private static final String CONTENT_TYPE_HEADER = 'Content-Type';
+    private static final String APPLICATION_ENCODED_HEADER = 'application/x-www-form-urlencoded';
+    private static final String APPLICATION_JSON_HEADER = 'application/json';
+    private static final String TOKEN_URL_STRING = 'https://api.box.com/oauth2/token';
+    private static final String EXTRACT_URL_STRING = 'https://api.box.com/2.0/ai/extract_structured';
     private static final String KEY_INPUT   = 'input';
     private static final String KEY_OUTPUT  = 'output';
     private static final String KEY_OPTIONS = 'options';
 
     // =========================
-    // Dependencies
+    // Define toolkit variables
     // =========================
     private final box.Toolkit toolkit;
     private final box.BoxAIToolkit aiToolkit;
-    private final box.BoxSignRequest signRequest;
 
     /**
      * Default constructor - initializes Toolkit dependencies.
@@ -22,7 +26,6 @@ global with sharing class BoxToolkitCallable implements System.Callable {
     global BoxToolkitCallable() {
         this.toolkit = new box.Toolkit();
         this.aiToolkit = new box.BoxAIToolkit();
-        this.signRequest = new box.BoxSignRequest();
     }
 
     /**
@@ -35,7 +38,6 @@ global with sharing class BoxToolkitCallable implements System.Callable {
         }
         this.toolkit = toolkit;
         this.aiToolkit = new box.BoxAIToolkit();
-        this.signRequest = new box.BoxSignRequest();
     }
 
     /**
@@ -73,6 +75,9 @@ global with sharing class BoxToolkitCallable implements System.Callable {
 
         // Route to the appropriate method based on action
         switch on normalized {
+            when 'downscopetoken' {
+                return downscopeToken(input, output);
+            }
             when 'createfolderforrecordid' {
                 return createFolderForRecordId(input, output);
             }
@@ -91,6 +96,9 @@ global with sharing class BoxToolkitCallable implements System.Callable {
             when 'extract' {
                 return extract(input, output);
             }
+            when 'sendsignrequest' {
+                return sendSignRequest(input, output);
+            }
             when 'sendrequest' {
                 return sendRequest(input, output);
             }
@@ -99,6 +107,81 @@ global with sharing class BoxToolkitCallable implements System.Callable {
             }
         }
     }
+
+    // ========================================
+    // Folder Operations
+    // ========================================
+    private Object downscopeToken(Map<String, Object> input, Map<String, Object> output) {
+        System.debug('Starting downscopeToken operation with input: ' + input);
+        String clientId = (String) input.get('clientId');
+        if (clientId == null) {
+            throw new BoxToolkitCallableException('clientId is required');
+        }
+
+        String clientSecret = (String) input.get('clientSecret');
+        if (clientSecret == null) {
+            throw new BoxToolkitCallableException('clientSecret is required');
+        }
+
+        String boxSubjectType = (String) input.get('boxSubjectType');
+        if (boxSubjectType == null) {
+            throw new BoxToolkitCallableException('boxSubjectType is required');
+        }
+
+        String boxSubjectId = (String) input.get('boxSubjectId');
+        if (boxSubjectId == null) {
+            throw new BoxToolkitCallableException('boxSubjectId is required');
+        }
+
+        String scopes = (String) input.get('scopes');
+        if (scopes == null) {
+            throw new BoxToolkitCallableException('scopes is required');
+        }
+
+        String resource = (String) input.get('resource');
+        if (resource == null) {
+            throw new BoxToolkitCallableException('resource is required');
+        }
+
+        HttpRequest httpRequest = new HttpRequest();
+        httpRequest.setMethod(METHOD_POST);
+        httpRequest.setEndpoint(TOKEN_URL_STRING);
+        httpRequest.setTimeout(60000);
+        httpRequest.setHeader(CONTENT_TYPE_HEADER, APPLICATION_ENCODED_HEADER);
+
+        String urlParameters = String.format(
+                'grant_type=client_credentials&client_id={0}&client_secret={1}&box_subject_type={2}&box_subject_id={3}',
+                new List<String>{
+                    clientId,
+                    clientSecret,
+                    boxSubjectType,
+                    boxSubjectId
+                });
+
+        httpRequest.setBody(urlParameters);
+        Http http = new Http();
+        HttpResponse response = http.send(httpRequest);
+        System.debug('Found accessToken: ' + response.getBody());
+        Map<String, Object> responseMap = (Map<String, Object>)JSON.deserializeUntyped(response.getBody());
+
+        urlParameters = String.format(
+        'grant_type={0}&subject_token={1}&subject_token_type={2}&scope={3}&resource={4}',
+        new List<String>{
+            'urn:ietf:params:oauth:grant-type:token-exchange',
+            String.valueOf(responseMap.get('access_token')),
+            'urn:ietf:params:oauth:token-type:access_token',
+            scopes,
+            resource
+        });
+        httpRequest.setBody(urlParameters);
+        response = http.send(httpRequest);
+        System.debug('Found downscoped token: ' + response.getBody());
+        responseMap = (Map<String, Object>)JSON.deserializeUntyped(response.getBody());
+        Map<String, Object> result = new Map<String, Object> { 'accessToken' => responseMap.get('access_token') };
+     
+        output.put('result', result);
+        return output;
+        }
 
     // ========================================
     // Folder Operations
@@ -112,6 +195,7 @@ global with sharing class BoxToolkitCallable implements System.Callable {
         Boolean optCreateRootFolder = (Boolean) input.get('optCreateRootFolder');
 
         String folderId = toolkit.createFolderForRecordId(recordId, folderNameOverride, optCreateRootFolder);
+        toolkit.commitChanges();
         Map<String, Object> result = new Map<String, Object>{ 'folderId' => folderId };
         output.put('result', result);
         return output;
@@ -121,55 +205,101 @@ global with sharing class BoxToolkitCallable implements System.Callable {
     // Box AI Operations
     // ========================================
     private Object askBoxAI(Map<String, Object> input, Map<String, Object> output) {
-        List<box.AIItem> items = (List<box.AIItem>) input.get('items');
+        // Validate and normalize items
+        String itemsObject = JSON.serialize(input.get('items'), true);
+        System.debug('Received items object: ' + itemsObject);
+        if (itemsObject == null) {
+            throw new BoxToolkitCallableException('items are required for askBoxAI');
+        }
+        List<box.AIItem> items = (List<box.AIItem>) JSON.deserialize(itemsObject, List<box.AIItem>.class);
+
         if (items == null || items.isEmpty()) {
             throw new BoxToolkitCallableException('items are required for askBoxAI');
         }
+
+        // Validate prompt
         String prompt = (String) input.get('prompt');
         if (String.isBlank(prompt)) {
             throw new BoxToolkitCallableException('prompt is required for askBoxAI');
         }
 
+        // Execute and shape output
         Object answer = aiToolkit.askBoxAI(items, prompt);
         output.put('answer', answer);
         return output;
     }
 
     private Object extract(Map<String, Object> input, Map<String, Object> output) {
+        // Validate required inputs
         String templateKey = (String) input.get('templateKey');
         if (String.isBlank(templateKey)) {
             throw new BoxToolkitCallableException('templateKey is required for extract');
         }
-
         String fileId = (String) input.get('fileId');
         if (String.isBlank(fileId)) {
             throw new BoxToolkitCallableException('fileId is required for extract');
         }
 
-        List<box.AIItem> items = new List<box.AIItem>();
-        box.AIItem fileItem = new box.AIItem();
-        fileItem.type = 'file';
-        fileItem.id = fileId;
+        // Build items payload
+        List<Map<String, Object>> items = new List<Map<String, Object>>();
+        Map<String, Object> fileItem = new Map<String, Object>{
+            'type' => 'file',
+            'id'   => fileId
+        };
         items.add(fileItem);
 
-        Boolean includeConfidenceScores = (Boolean) input.get('includeConfidenceScores');
+        // Read optional flags with sane defaults
+        Boolean includeConfidenceScores = (input.containsKey('includeConfidenceScores') 
+            ? Boolean.valueOf(input.get('includeConfidenceScores')) 
+            : true);
         if (includeConfidenceScores == null) {
-            includeConfidenceScores = false;
+            includeConfidenceScores = true;
         }
 
-        box.BoxAIExtract extractReq = new box.BoxAIExtract();
-        box.MetadataTemplate metadataTemplate = new box.MetadataTemplate();
-        metadataTemplate.scope = 'enterprise';
-        metadataTemplate.type = 'metadata_template';
-        metadataTemplate.templateKey = templateKey;
-        extractReq.metadata_template = metadataTemplate;
-        extractReq.items = items;
-        extractReq.include_confidence_score = includeConfidenceScores;
+        // Build extract request payload
+        Map<String, Object> metadataTemplateMap = new Map<String, Object>{
+            'scope'        => 'enterprise',
+            'type'         => 'metadata_template',
+            'template_key' => templateKey
+        };
+        Map<String, Object> extractRequestMap = new Map<String, Object>{
+            'include_confidence_score' => true,
+            'metadata_template'        => metadataTemplateMap,
+            'items'                    => items
+        };
 
-        box.BoxAIResponse resp = aiToolkit.extract(extractReq);
-        output.put('answer', resp.answer);
-        output.put('confidence_scores', resp.confidence_score);
-        output.put('answer_map', resp.answerMap);
+        // Invoke Box AI extract endpoint
+        HttpRequest httpRequest = new HttpRequest();
+        httpRequest.setMethod(METHOD_POST);
+        httpRequest.setEndpoint(EXTRACT_URL_STRING);
+        httpRequest.setTimeout(60000);
+        httpRequest.setHeader(CONTENT_TYPE_HEADER, APPLICATION_JSON_HEADER);
+        httpRequest.setBody(JSON.serialize(extractRequestMap, true));
+
+        HttpResponse httpResp = toolkit.sendRequest(httpRequest);
+        String body = httpResp != null ? httpResp.getBody() : null;
+        if (String.isBlank(body)) {
+            throw new BoxToolkitCallableException('Empty response from Box AI extract endpoint');
+        }
+
+        // Parse response and shape result
+        Map<String, Object> respMap = (Map<String, Object>) JSON.deserializeUntyped(body);
+        Map<String, Object> answerMap = (Map<String, Object>) respMap.get('answer');
+        Map<String, Object> confidenceScoreMap = (Map<String, Object>) respMap.get('confidence_score');
+
+        List<Map<String, Object>> resultList = new List<Map<String, Object>>();
+        if (answerMap != null) {
+            for (String key : answerMap.keySet()) {
+                Map<String, Object> row = new Map<String, Object>{
+                    'key'        => key,
+                    'value'      => answerMap.get(key),
+                    'confidence' => (confidenceScoreMap != null ? confidenceScoreMap.get(key) : null)
+                };
+                resultList.add(row);
+            }
+        }
+
+        output.put('result', resultList);
         return output;
     }
 
@@ -233,6 +363,22 @@ global with sharing class BoxToolkitCallable implements System.Callable {
         Boolean optCreateFolder = (Boolean) input.get('optCreateFolder');
 
         Object result = toolkit.createCollaborationOnRecord(userId, recordId, collabType, optCreateFolder);
+        output.put('result', result);
+        return output;
+    }
+
+    // ========================================
+    // Box Sign Operations  
+    // ========================================
+    private Object sendSignRequest(Map<String, Object> input, Map<String, Object> output) {
+
+        List<box.BoxSignRequest> signRequestList = (List<box.BoxSignRequest>) input.get('signRequests');
+        
+        if (signRequestList == null || signRequestList.isEmpty()) {
+            throw new BoxToolkitCallableException('signRequests are required');
+        }
+
+        Object result = box.BoxSignService.sendSignRequests(signRequestList);
         output.put('result', result);
         return output;
     }

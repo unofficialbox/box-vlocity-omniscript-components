@@ -140,3 +140,4 @@ dist
 /.sfdx
 *.DS_Store*
 /.vscode
+/test-results
